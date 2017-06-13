@@ -9,11 +9,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/anacrolix/dht"
+	"github.com/anacrolix/dht/krpc"
 	"github.com/anacrolix/tagflag"
 	"github.com/bradfitz/iter"
-
-	"github.com/anacrolix/torrent/dht"
-	"github.com/anacrolix/torrent/dht/krpc"
 )
 
 func main() {

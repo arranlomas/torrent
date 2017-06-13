@@ -1,4 +1,4 @@
-package motorrent
+package torrent
 
 import (
 	"github.com/anacrolix/torrent/metainfo"
@@ -34,7 +34,7 @@ func TorrentSpecFromMagnetURI(uri string) (spec *TorrentSpec, err error) {
 }
 
 func TorrentSpecFromMetaInfo(mi *metainfo.MetaInfo) (spec *TorrentSpec) {
-	info := mi.UnmarshalInfo()
+	info, _ := mi.UnmarshalInfo()
 	spec = &TorrentSpec{
 		Trackers:    mi.AnnounceList,
 		InfoBytes:   mi.InfoBytes,

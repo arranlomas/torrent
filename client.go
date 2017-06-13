@@ -152,6 +152,7 @@ func (cl *Client) WriteStatus(_w io.Writer) {
 	}
 }
 
+
 func (cl *Client) GetStatusAsJson() StatusJson{
 	var statusJson = StatusJson {
 		TorrentList:		 []TorrentJson{},

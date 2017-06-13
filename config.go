@@ -1,7 +1,9 @@
-package motorrent
+package torrent
 
 import (
-	"github.com/anacrolix/torrent/dht"
+	"github.com/anacrolix/dht"
+	"golang.org/x/time/rate"
+
 	"github.com/anacrolix/torrent/iplist"
 	"github.com/anacrolix/torrent/storage"
 )
@@ -22,26 +24,39 @@ type Config struct {
 	NoDHT bool `long:"disable-dht"`
 	// Overrides the default DHT configuration.
 	DHTConfig dht.ServerConfig
-	// Don't ever send chunks to peers.
+
+	// Never send chunks to peers.
 	NoUpload bool `long:"no-upload"`
 	// Upload even after there's nothing in it for us. By default uploading is
-	// not altruistic.
+	// not altruistic, we'll upload slightly more than we download from each
+	// peer.
 	Seed bool `long:"seed"`
+	// Events are data bytes sent in pieces. The burst must be large enough to
+	// fit a whole chunk.
+	UploadRateLimiter *rate.Limiter
+	// The events are bytes read from connections. The burst must be bigger
+	// than the largest Read performed on a Conn minus one. This is likely to
+	// be the larger of the main read loop buffer (~4096), and the requested
+	// chunk size (~16KiB).
+	DownloadRateLimiter *rate.Limiter
+
 	// User-provided Client peer ID. If not present, one is generated automatically.
 	PeerID string
 	// For the bittorrent protocol.
 	DisableUTP bool
 	// For the bittorrent protocol.
 	DisableTCP bool `long:"disable-tcp"`
-	// Called to instantiate storage for each added torrent. Provided backends
-	// are in $REPO/data. If not set, the "file" implementation is used.
-	DefaultStorage    storage.ClientImpl
-	DisableEncryption bool `long:"disable-encryption"`
+	// Called to instantiate storage for each added torrent. Builtin backends
+	// are in the storage package. If not set, the "file" implementation is
+	// used.
+	DefaultStorage storage.ClientImpl
+
+	DisableEncryption  bool `long:"disable-encryption"`
+	ForceEncryption    bool // Don't allow unobfuscated connections.
+	PreferNoEncryption bool
 
 	IPBlocklist iplist.Ranger
 	DisableIPv6 bool `long:"disable-ipv6"`
 	// Perform logging and any other behaviour that will help debug.
 	Debug bool `help:"enable debug logging"`
 }
-
-func NewConfig() *Config { return &Config{} }

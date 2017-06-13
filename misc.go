@@ -1,4 +1,4 @@
-package motorrent
+package torrent
 
 import (
 	"errors"
@@ -80,4 +80,8 @@ func chunkIndexSpec(index int, pieceLength, chunkSize pp.Integer) chunkSpec {
 		ret.Length = pieceLength - ret.Begin
 	}
 	return ret
+}
+
+func connLessTrusted(l, r *connection) bool {
+	return l.netGoodPiecesDirtied() < r.netGoodPiecesDirtied()
 }
