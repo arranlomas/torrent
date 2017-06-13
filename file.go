@@ -66,9 +66,7 @@ func (f *File) State() (ret []FilePieceState) {
 		if len1 > remaining {
 			len1 = remaining
 		}
-		
 		ps := f.t.pieceState(i)
-		
 		ret = append(ret, FilePieceState{len1, ps})
 		off = 0
 		remaining -= len1
