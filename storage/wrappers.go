@@ -11,7 +11,7 @@ import (
 )
 
 type Client struct {
-	ci ClientImpl
+	ClientImpl
 }
 
 func NewClient(cl ClientImpl) *Client {
@@ -19,7 +19,7 @@ func NewClient(cl ClientImpl) *Client {
 }
 
 func (cl Client) OpenTorrent(info *metainfo.Info, infoHash metainfo.Hash) (*Torrent, error) {
-	t, err := cl.ci.OpenTorrent(info, infoHash)
+	t, err := cl.ClientImpl.OpenTorrent(info, infoHash)
 	return &Torrent{t}, err
 }
 

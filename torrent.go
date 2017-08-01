@@ -481,6 +481,90 @@ func (t *Torrent) writeStatus(w io.Writer) {
 	}
 }
 
+// func (cl *Client) GetStatusAsJson() StatusJson{
+// 	var statusJson = StatusJson {
+// 		TorrentList:		 []TorrentJson{},
+// 	}
+
+// 	if addr := cl.ListenAddr(); addr != nil {
+// 		statusJson.Addr = addr
+// 	}
+// 	statusJson.PeerId = cl.PeerID()
+// 	statusJson.BannedIps = len(cl.badPeerIPsLocked())
+
+// 	if dht := cl.DHT(); dht != nil {
+// 		dhtStats := dht.Stats()
+// 		var nodesJson = NodesJson {
+// 			Total: dhtStats.Nodes,
+// 			Good: dhtStats.GoodNodes,
+// 			Bad: dhtStats.BadNodes,
+// 		}
+		
+// 		statusJson.DHTNodes = nodesJson
+// 		statusJson.DHTServerID = dht.ID()
+// 		statusJson.DHTPort = missinggo.AddrPort(dht.Addr())
+// 		statusJson.DHTAnnounces = dhtStats.ConfirmedAnnounces
+// 		statusJson.OutstandingTransactions = dhtStats.OutstandingTransactions
+// 	}
+
+// 	statusJson.TorrentCount = len(cl.torrentsAsSlice())
+
+// 	for _, t := range slices.Sort(cl.torrentsAsSlice(), func(l, r *Torrent) bool {
+// 			return l.InfoHash().AsString() < r.InfoHash().AsString()
+// 		}).([]*Torrent) {
+// 			var torrentJson = TorrentJson {}
+			
+// 			if t.name() == "" {
+// 				torrentJson.Name = "unknown name"
+// 			} else {
+// 				torrentJson.Name = t.name()
+// 			}
+// 			if t.Info() != nil {
+// 				torrentJson.PercentageComplete =  100*(1-float64(t.bytesMissingLocked())/float64(t.Info().TotalLength()))
+// 			}
+// 			torrentJson.InfoHash = t.infoHash.HexString()
+// 			torrentJson.MetadataLength = t.metadataSize()
+// 			if t.haveInfo() {
+// 				torrentJson.PieceLength = t.usualPieceSize()
+// 			}
+
+// 			if t.Info() != nil {
+// 				torrentJson.NumPieces = t.numPieces()
+// 			}
+// 			statusJson.TorrentList = append(statusJson.TorrentList, torrentJson)
+// 		}
+
+// 	return statusJson
+// }
+
+type StatusJson struct{
+	Addr net.Addr `json:"addr"` 
+	PeerId string `json:"peerId"` 
+	BannedIps int `json:"bannedIps"` 
+	DHTNodes NodesJson `json:"dhtNodes"` 
+	DHTServerID string `json:"dhtServerId"` 
+	DHTPort int `json:"dhtPort"`
+	DHTAnnounces int `json:"dhtAnnounces"`
+	OutstandingTransactions int `json:"outstandingTransactions"` 
+	TorrentCount int `json:"torrentCount"`
+	TorrentList []TorrentJson `json:"torrentList"` 
+}
+
+type TorrentJson struct{
+	Name string `json:"name"` 
+	PercentageComplete float64 `json:"percComplete"` 
+	InfoHash string `json:"infoHash"`
+	MetadataLength int `json:"metadatLength"`  
+	PieceLength int `json:"pieceLength"` 
+	NumPieces int `json:"numPieces"`
+}
+
+type NodesJson struct{
+	Total int `json:"total"` 
+	Good int `json:"good"` 
+	Bad uint `json:"bad"` 
+}
+
 func (t *Torrent) haveInfo() bool {
 	return t.info != nil
 }
@@ -553,7 +637,6 @@ func (t *Torrent) close() (err error) {
 	for conn := range t.conns {
 		conn.Close()
 	}
-	t.cl.event.Broadcast()
 	t.pieceStateChanges.Close()
 	t.updateWantPeersEvent()
 	return
@@ -1306,21 +1389,20 @@ func (t *Torrent) addConnection(c *connection, outgoing bool) bool {
 	}
 	for c0 := range t.conns {
 		if c.PeerID == c0.PeerID {
+			// Retain the connection from lower peer ID to higher.
+			lower := string(t.cl.peerID[:]) < string(c.PeerID[:])
+			if (outgoing && lower) || (!outgoing && !lower) {
+				c0.Close()
+				t.deleteConnection(c0)
+				duplicateClientConns.Add(1)
+				log.Printf("Drop connection: %s, %s, %s", t.name(), c0.localAddr(), c0.remoteAddr())
+				continue
+			}
+
 			// Already connected to a client with that ID.
 			duplicateClientConns.Add(1)
-			lower := string(t.cl.peerID[:]) < string(c.PeerID[:])
-			// Retain the connection from initiated from lower peer ID to
-			// higher.
-			if outgoing == lower {
-				// Close the other one.
-				c0.Close()
-				// Is it safe to delete from the map while we're iterating
-				// over it?
-				t.deleteConnection(c0)
-			} else {
-				// Abandon this one.
-				return false
-			}
+			log.Printf("Drop connection: %s, %s, %s", t.name(), c.localAddr(), c.remoteAddr())
+			return false
 		}
 	}
 	if len(t.conns) >= t.maxEstablishedConns {

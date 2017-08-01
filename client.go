@@ -46,7 +46,6 @@ type Client struct {
 	halfOpenLimit  int
 	peerID         [20]byte
 	defaultStorage *storage.Client
-	onClose        []func()
 	tcpListener    net.Listener
 	utpSock        *utp.Socket
 	dHT            *dht.Server
@@ -152,91 +151,6 @@ func (cl *Client) WriteStatus(_w io.Writer) {
 	}
 }
 
-
-func (cl *Client) GetStatusAsJson() StatusJson{
-	var statusJson = StatusJson {
-		TorrentList:		 []TorrentJson{},
-	}
-
-	if addr := cl.ListenAddr(); addr != nil {
-		statusJson.Addr = addr
-	}
-	statusJson.PeerId = cl.PeerID()
-	statusJson.BannedIps = len(cl.badPeerIPsLocked())
-
-	if dht := cl.DHT(); dht != nil {
-		dhtStats := dht.Stats()
-		var nodesJson = NodesJson {
-			Total: dhtStats.Nodes,
-			Good: dhtStats.GoodNodes,
-			Bad: dhtStats.BadNodes,
-		}
-		
-		statusJson.DHTNodes = nodesJson
-		statusJson.DHTServerID = dht.ID()
-		statusJson.DHTPort = missinggo.AddrPort(dht.Addr())
-		statusJson.DHTAnnounces = dhtStats.ConfirmedAnnounces
-		statusJson.OutstandingTransactions = dhtStats.OutstandingTransactions
-	}
-
-	statusJson.TorrentCount = len(cl.torrentsAsSlice())
-
-	for _, t := range slices.Sort(cl.torrentsAsSlice(), func(l, r *Torrent) bool {
-			return l.InfoHash().AsString() < r.InfoHash().AsString()
-		}).([]*Torrent) {
-			var torrentJson = TorrentJson {}
-			
-			if t.name() == "" {
-				torrentJson.Name = "unknown name"
-			} else {
-				torrentJson.Name = t.name()
-			}
-			if t.Info() != nil {
-				torrentJson.PercentageComplete =  100*(1-float64(t.bytesMissingLocked())/float64(t.Info().TotalLength()))
-			}
-			torrentJson.InfoHash = t.infoHash.HexString()
-			torrentJson.MetadataLength = t.metadataSize()
-			if t.haveInfo() {
-				torrentJson.PieceLength = t.usualPieceSize()
-			}
-
-			if t.Info() != nil {
-				torrentJson.NumPieces = t.numPieces()
-			}
-			statusJson.TorrentList = append(statusJson.TorrentList, torrentJson)
-		}
-
-	return statusJson
-}
-
-type StatusJson struct{
-	Addr net.Addr `json:"addr"` 
-	PeerId string `json:"peerId"` 
-	BannedIps int `json:"bannedIps"` 
-	DHTNodes NodesJson `json:"dhtNodes"` 
-	DHTServerID string `json:"dhtServerId"` 
-	DHTPort int `json:"dhtPort"`
-	DHTAnnounces int `json:"dhtAnnounces"`
-	OutstandingTransactions int `json:"outstandingTransactions"` 
-	TorrentCount int `json:"torrentCount"`
-	TorrentList []TorrentJson `json:"torrentList"` 
-}
-
-type TorrentJson struct{
-	Name string `json:"name"` 
-	PercentageComplete float64 `json:"percComplete"` 
-	InfoHash string `json:"infoHash"`
-	MetadataLength int `json:"metadatLength"`  
-	PieceLength int `json:"pieceLength"` 
-	NumPieces int `json:"numPieces"`
-}
-
-type NodesJson struct{
-	Total int `json:"total"` 
-	Good int `json:"good"` 
-	Bad uint `json:"bad"` 
-}
-
 func listenUTP(networkSuffix, addr string) (*utp.Socket, error) {
 	return utp.NewSocket("udp"+networkSuffix, addr)
 }
@@ -324,12 +238,6 @@ func NewClient(cfg *Config) (cl *Client, err error) {
 		dopplegangerAddrs: make(map[string]struct{}),
 		torrents:          make(map[metainfo.Hash]*Torrent),
 	}
-	defer func() {
-		if err == nil {
-			return
-		}
-		cl.Close()
-	}()
 	if cfg.UploadRateLimiter == nil {
 		cl.uploadLimit = rate.NewLimiter(rate.Inf, 0)
 	} else {
@@ -345,11 +253,6 @@ func NewClient(cfg *Config) (cl *Client, err error) {
 	storageImpl := cfg.DefaultStorage
 	if storageImpl == nil {
 		storageImpl = storage.NewFile(cfg.DataDir)
-		cl.onClose = append(cl.onClose, func() {
-			if err := storageImpl.Close(); err != nil {
-				log.Printf("error closing default storage: %s", err)
-			}
-		})
 	}
 	cl.defaultStorage = storage.NewClient(storageImpl)
 	if cfg.IPBlocklist != nil {
@@ -433,9 +336,6 @@ func (cl *Client) Close() {
 	}
 	for _, t := range cl.torrents {
 		t.close()
-	}
-	for _, f := range cl.onClose {
-		f()
 	}
 	cl.event.Broadcast()
 }

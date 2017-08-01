@@ -8,6 +8,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,12 +102,11 @@ func TestUnmountWedged(t *testing.T) {
 	fs := New(client)
 	fuseConn, err := fuse.Mount(layout.MountDir)
 	if err != nil {
-		switch err.Error() {
-		case "cannot locate OSXFUSE",
-			"fusermount: exit status 1":
-			t.Skip(err)
+		msg := fmt.Sprintf("error mounting: %s", err)
+		if strings.Contains(err.Error(), "fuse") || err.Error() == "exit status 71" {
+			t.Skip(msg)
 		}
-		t.Fatal(err)
+		t.Fatal(msg)
 	}
 	go func() {
 		server := fusefs.New(fuseConn, &fusefs.Config{
