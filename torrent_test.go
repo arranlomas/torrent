@@ -100,10 +100,8 @@ func BenchmarkUpdatePiecePriorities(b *testing.B) {
 // Check that a torrent containing zero-length file(s) will start, and that
 // they're created in the filesystem. The client storage is assumed to be
 // file-based on the native filesystem based.
-func testEmptyFilesAndZeroPieceLength(t *testing.T, cs storage.ClientImpl) {
-	cfg := TestingConfig
-	cfg.DefaultStorage = cs
-	cl, err := NewClient(&TestingConfig)
+func testEmptyFilesAndZeroPieceLength(t *testing.T, cfg *Config) {
+	cl, err := NewClient(cfg)
 	require.NoError(t, err)
 	defer cl.Close()
 	ib, err := bencode.Marshal(metainfo.Info{
@@ -112,7 +110,7 @@ func testEmptyFilesAndZeroPieceLength(t *testing.T, cs storage.ClientImpl) {
 		PieceLength: 0,
 	})
 	require.NoError(t, err)
-	fp := filepath.Join(TestingConfig.DataDir, "empty")
+	fp := filepath.Join(cfg.DataDir, "empty")
 	os.Remove(fp)
 	assert.False(t, missinggo.FilePathExists(fp))
 	tt, err := cl.AddTorrent(&metainfo.MetaInfo{
@@ -126,11 +124,19 @@ func testEmptyFilesAndZeroPieceLength(t *testing.T, cs storage.ClientImpl) {
 }
 
 func TestEmptyFilesAndZeroPieceLengthWithFileStorage(t *testing.T) {
-	testEmptyFilesAndZeroPieceLength(t, storage.NewFile(TestingConfig.DataDir))
+	cfg := TestingConfig()
+	ci := storage.NewFile(cfg.DataDir)
+	defer ci.Close()
+	cfg.DefaultStorage = ci
+	testEmptyFilesAndZeroPieceLength(t, cfg)
 }
 
 func TestEmptyFilesAndZeroPieceLengthWithMMapStorage(t *testing.T) {
-	testEmptyFilesAndZeroPieceLength(t, storage.NewMMap(TestingConfig.DataDir))
+	cfg := TestingConfig()
+	ci := storage.NewMMap(cfg.DataDir)
+	defer ci.Close()
+	cfg.DefaultStorage = ci
+	testEmptyFilesAndZeroPieceLength(t, cfg)
 }
 
 func TestPieceHashFailed(t *testing.T) {
@@ -143,7 +149,7 @@ func TestPieceHashFailed(t *testing.T) {
 	}
 	require.NoError(t, tt.setInfoBytes(mi.InfoBytes))
 	tt.cl.mu.Lock()
-	tt.pieces[1].DirtyChunks.AddRange(0, 3)
+	tt.pieces[1].dirtyChunks.AddRange(0, 3)
 	require.True(t, tt.pieceAllDirty(1))
 	tt.pieceHashed(1, false)
 	// Dirty chunks should be cleared so we can try again.

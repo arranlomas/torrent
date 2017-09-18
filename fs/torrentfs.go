@@ -2,8 +2,6 @@ package torrentfs
 
 import (
 	"expvar"
-	"fmt"
-	"io"
 	"os"
 	"path"
 	"strings"
@@ -54,98 +52,8 @@ type node struct {
 	t        *torrent.Torrent
 }
 
-type fileNode struct {
-	node
-	size          uint64
-	TorrentOffset int64
-}
-
-func (fn fileNode) Attr(ctx context.Context, attr *fuse.Attr) error {
-	attr.Size = fn.size
-	attr.Mode = defaultMode
-	return nil
-}
-
 func (n *node) fsPath() string {
 	return "/" + n.metadata.Name + "/" + n.path
-}
-
-func blockingRead(ctx context.Context, fs *TorrentFS, t *torrent.Torrent, off int64, p []byte) (n int, err error) {
-	fs.mu.Lock()
-	fs.blockedReads++
-	fs.event.Broadcast()
-	fs.mu.Unlock()
-	var (
-		_n   int
-		_err error
-	)
-	readDone := make(chan struct{})
-	go func() {
-		defer close(readDone)
-		r := t.NewReader()
-		defer r.Close()
-		_, _err = r.Seek(off, os.SEEK_SET)
-		if _err != nil {
-			return
-		}
-		_n, _err = io.ReadFull(r, p)
-	}()
-	select {
-	case <-readDone:
-		n = _n
-		err = _err
-	case <-fs.destroyed:
-		err = fuse.EIO
-	case <-ctx.Done():
-		err = fuse.EINTR
-	}
-	fs.mu.Lock()
-	fs.blockedReads--
-	fs.event.Broadcast()
-	fs.mu.Unlock()
-	return
-}
-
-func readFull(ctx context.Context, fs *TorrentFS, t *torrent.Torrent, off int64, p []byte) (n int, err error) {
-	for len(p) != 0 {
-		var nn int
-		nn, err = blockingRead(ctx, fs, t, off, p)
-		if err != nil {
-			break
-		}
-		n += nn
-		off += int64(nn)
-		p = p[nn:]
-	}
-	return
-}
-
-func (fn fileNode) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	torrentfsReadRequests.Add(1)
-	if req.Dir {
-		panic("read on directory")
-	}
-	size := req.Size
-	fileLeft := int64(fn.size) - req.Offset
-	if fileLeft < 0 {
-		fileLeft = 0
-	}
-	if fileLeft < int64(size) {
-		size = int(fileLeft)
-	}
-	resp.Data = resp.Data[:size]
-	if len(resp.Data) == 0 {
-		return nil
-	}
-	torrentOff := fn.TorrentOffset + req.Offset
-	n, err := readFull(ctx, fn.FS, fn.t, torrentOff, resp.Data)
-	if err != nil {
-		return err
-	}
-	if n != size {
-		panic(fmt.Sprintf("%d < %d", n, size))
-	}
-	return nil
 }
 
 type dirNode struct {
@@ -154,7 +62,6 @@ type dirNode struct {
 
 var (
 	_ fusefs.HandleReadDirAller = dirNode{}
-	_ fusefs.HandleReader       = fileNode{}
 )
 
 func isSubPath(parent, child string) bool {

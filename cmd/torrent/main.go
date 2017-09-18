@@ -2,6 +2,7 @@
 package main
 
 import (
+	"expvar"
 	"fmt"
 	"log"
 	"net"
@@ -10,7 +11,8 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/anacrolix/envpprof"
+	"github.com/anacrolix/dht"
+	"github.com/anacrolix/envpprof"
 	"github.com/anacrolix/tagflag"
 	"github.com/dustin/go-humanize"
 	"github.com/gosuri/uiprogress"
@@ -20,21 +22,6 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
 )
-
-func resolvedPeerAddrs(ss []string) (ret []torrent.Peer, err error) {
-	for _, s := range ss {
-		var addr *net.TCPAddr
-		addr, err = net.ResolveTCPAddr("tcp", s)
-		if err != nil {
-			return
-		}
-		ret = append(ret, torrent.Peer{
-			IP:   addr.IP,
-			Port: addr.Port,
-		})
-	}
-	return
-}
 
 func torrentBar(t *torrent.Torrent) {
 	bar := uiprogress.AddBar(1)
@@ -138,6 +125,7 @@ var flags = struct {
 	Addr         *net.TCPAddr   `help:"network listen addr"`
 	UploadRate   tagflag.Bytes  `help:"max piece bytes to send per second"`
 	DownloadRate tagflag.Bytes  `help:"max bytes per second down from peers"`
+	Debug        bool
 	tagflag.StartPos
 	Torrent []string `arity:"+" help:"torrent file path or magnet uri"`
 }{
@@ -148,7 +136,11 @@ var flags = struct {
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	tagflag.Parse(&flags)
-	var clientConfig torrent.Config
+	clientConfig := torrent.Config{
+		DHTConfig: dht.ServerConfig{
+			StartingNodes: dht.GlobalBootstrapAddrs,
+		},
+	}
 	if flags.Mmap {
 		clientConfig.DefaultStorage = storage.NewMMap("")
 	}
@@ -186,4 +178,8 @@ func main() {
 	if flags.Seed {
 		select {}
 	}
+	expvar.Do(func(kv expvar.KeyValue) {
+		fmt.Printf("%s: %s\n", kv.Key, kv.Value)
+	})
+	envpprof.Stop()
 }

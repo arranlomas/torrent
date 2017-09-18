@@ -11,7 +11,7 @@ import (
 )
 
 func TestReaderReadContext(t *testing.T) {
-	cl, err := NewClient(&TestingConfig)
+	cl, err := NewClient(TestingConfig())
 	require.NoError(t, err)
 	defer cl.Close()
 	tt, err := cl.AddTorrent(testutil.GreetingMetaInfo())
@@ -20,6 +20,6 @@ func TestReaderReadContext(t *testing.T) {
 	ctx, _ := context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond))
 	r := tt.NewReader()
 	defer r.Close()
-	_, err = r.ReadContext(make([]byte, 1), ctx)
+	_, err = r.ReadContext(ctx, make([]byte, 1))
 	require.EqualValues(t, context.DeadlineExceeded, err)
 }
